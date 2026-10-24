@@ -1,23 +1,34 @@
 // Turns device orientation (or the keyboard, on desktop) into a tilt vector in screen
 // space: x > 0 rolls the ball right, y > 0 rolls it down. Each component is in [-1, 1].
 
-const MAX_TILT_DEG = 45;
+const FULL_TILT = Math.sin(Math.PI / 4); // tilting 45° from rest gives full acceleration
 const KEY_TILT = 0.35;
+const RAD = Math.PI / 180;
 
 /**
- * Maps DeviceOrientation beta/gamma (degrees, in the device's portrait frame) to tilt in
- * degrees along the screen's x/y axes, for the given screen rotation angle.
+ * The direction gravity pulls along the screen, from DeviceOrientation beta/gamma
+ * (degrees). Returns screen-space components (x right, y down) of the unit gravity
+ * vector, for the given screen rotation angle.
+ *
+ * Working from the gravity vector rather than raw angles keeps tilt responsive however
+ * the phone is held: Euler angles barely change when a phone held upright is tilted.
  */
-export function screenTilt(beta, gamma, angle) {
+export function screenGravity(beta, gamma, angle) {
+  const b = beta * RAD;
+  const g = gamma * RAD;
+  // Gravity in the device frame (x right, y up along the portrait screen), per the
+  // DeviceOrientation spec's Z-X'-Y'' rotation order.
+  const dx = Math.cos(b) * Math.sin(g);
+  const dy = -Math.sin(b);
   switch (((angle % 360) + 360) % 360) {
-    case 90:
-      return { x: beta, y: -gamma };
+    case 90: // device top on the left
+      return { x: -dy, y: -dx };
     case 180:
-      return { x: -gamma, y: -beta };
-    case 270:
-      return { x: -beta, y: gamma };
+      return { x: -dx, y: dy };
+    case 270: // device top on the right
+      return { x: dy, y: dx };
     default:
-      return { x: gamma, y: beta };
+      return { x: dx, y: -dy };
   }
 }
 
@@ -29,16 +40,13 @@ export function effectiveAngle(screenAngle, portraitViewport) {
   return portraitViewport ? (screenAngle + 90) % 360 : screenAngle;
 }
 
-function toUnit(deg) {
-  const clamped = Math.max(-MAX_TILT_DEG, Math.min(MAX_TILT_DEG, deg));
-  return Math.sin((clamped * Math.PI) / 180) / Math.sin((MAX_TILT_DEG * Math.PI) / 180);
-}
+const clampUnit = (v) => Math.max(-1, Math.min(1, v));
 
 /** Tilt relative to the calibrated resting position, normalised to [-1, 1]. */
 export function tiltFromOrientation(reading, baseline, angle) {
-  const now = screenTilt(reading.beta, reading.gamma, angle);
-  const rest = baseline ? screenTilt(baseline.beta, baseline.gamma, angle) : { x: 0, y: 0 };
-  return { x: toUnit(now.x - rest.x), y: toUnit(now.y - rest.y) };
+  const now = screenGravity(reading.beta, reading.gamma, angle);
+  const rest = baseline ? screenGravity(baseline.beta, baseline.gamma, angle) : { x: 0, y: 0 };
+  return { x: clampUnit((now.x - rest.x) / FULL_TILT), y: clampUnit((now.y - rest.y) / FULL_TILT) };
 }
 
 const KEYS = {

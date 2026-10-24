@@ -14,7 +14,7 @@ async function tilt(page, x, y) {
     ([x, y]) => {
       const portrait = window.innerHeight > window.innerWidth;
       const angle = ((screen.orientation?.angle ?? 0) + (portrait ? 90 : 0)) % 360;
-      // Inverse of screenTilt() in src/input.js.
+      // Inverse of screenGravity() in src/input.js (exact in direction, small angles).
       const map = {
         0: { beta: y, gamma: x },
         90: { beta: x, gamma: -y },
@@ -168,4 +168,69 @@ test('serves a landscape, full-screen web manifest', async ({ request }) => {
   const manifest = await res.json();
   expect(manifest.orientation).toBe('landscape');
   expect(manifest.display).toBe('fullscreen');
+});
+
+test.describe('motion sensor access', () => {
+  /** Simulates iOS: motion events need DeviceOrientationEvent.requestPermission(). */
+  async function fakeIosPermission(page, answer) {
+    await page.addInitScript((answer) => {
+      window.__permissionCalls = 0;
+      DeviceOrientationEvent.requestPermission = async () => {
+        window.__permissionCalls++;
+        return answer;
+      };
+    }, answer);
+    await page.reload();
+  }
+
+  test('asks for motion permission when Play is tapped (iOS)', async ({ page }) => {
+    await fakeIosPermission(page, 'granted');
+    expect(await page.evaluate(() => window.__permissionCalls)).toBe(0);
+    await tilt(page, 0, 0);
+    await startGame(page);
+    expect(await page.evaluate(() => window.__permissionCalls)).toBe(1);
+    await tilt(page, 0, 20);
+    await expect(stage(page)).toHaveAttribute('data-loss', 'cheetah');
+    await expect(page.locator('#notice')).toBeHidden();
+  });
+
+  test('explains how to fix it when motion permission is denied', async ({ page }) => {
+    await fakeIosPermission(page, 'denied');
+    await startGame(page);
+    await expect(page.locator('#notice')).toBeVisible();
+    await expect(page.locator('#notice')).toHaveAttribute('data-kind', 'denied');
+    await expect(page.locator('#notice')).toContainText('tap Allow');
+  });
+
+  test('says so when the phone sends no tilt data', async ({ page }) => {
+    await startGame(page);
+    await expect(page.locator('#notice')).toHaveAttribute('data-kind', 'noData', {
+      timeout: 4000,
+    });
+    await expect(page.locator('#notice')).toContainText('Motion sensors');
+    // As soon as readings arrive the notice goes away.
+    await tilt(page, 0, 0);
+    await expect(page.locator('#notice')).toBeHidden();
+  });
+
+  test('stays quiet when tilt data is flowing', async ({ page }) => {
+    await startGame(page);
+    for (let i = 0; i < 8; i++) {
+      await tilt(page, 0, 0);
+      await page.waitForTimeout(250);
+    }
+    await expect(page.locator('#notice')).toBeHidden();
+  });
+
+  test('?debug shows live sensor readings', async ({ page }) => {
+    await page.goto('/?debug');
+    await expect(page.locator('#debug')).toBeVisible();
+    await tilt(page, 0, 12);
+    await expect(page.locator('#debug')).toContainText('events 1');
+    await expect(page.locator('#debug')).toContainText(/beta -?\d/);
+  });
+
+  test('the debug panel is hidden normally', async ({ page }) => {
+    await expect(page.locator('#debug')).toBeHidden();
+  });
 });

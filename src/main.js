@@ -11,6 +11,18 @@ const overlay = document.getElementById('overlay');
 const title = document.getElementById('title');
 const message = document.getElementById('message');
 const playButton = document.getElementById('play');
+const notice = document.getElementById('notice');
+const debugPanel = new URLSearchParams(location.search).has('debug')
+  ? document.getElementById('debug')
+  : null;
+
+const SENSOR_TIMEOUT_MS = 1500;
+const NOTICES = {
+  denied:
+    "Motion access is off, so tilting won't move the ball. On iPhone, close this tab, open the site again and tap Allow.",
+  noData:
+    "Your phone isn't sending tilt data. iPhone: tap Allow when asked for motion access. Android: browser menu → Site settings → Motion sensors → Allow.",
+};
 
 const LOSS_MESSAGES = {
   cheetah: 'The cheetah got you!',
@@ -25,6 +37,9 @@ let portraitViewport = false;
 let latestReading = null;
 let baseline = null;
 let wakeLock = null;
+let permission = 'unknown';
+let readingCount = 0;
+let sensorTimer = null;
 const keys = new Set();
 
 function screenAngle() {
@@ -92,16 +107,28 @@ function showLoss(reason) {
   releaseWakeLock();
 }
 
+// iOS 13+ only delivers motion events after the user grants access from a tap.
 async function requestOrientationPermission() {
   const DOE = window.DeviceOrientationEvent;
   if (DOE && typeof DOE.requestPermission === 'function') {
     try {
-      return (await DOE.requestPermission()) === 'granted';
+      return await DOE.requestPermission();
     } catch {
-      return false;
+      return 'denied';
     }
   }
-  return true;
+  return 'not-required';
+}
+
+function showNotice(kind) {
+  notice.textContent = NOTICES[kind];
+  notice.dataset.kind = kind;
+  notice.hidden = false;
+}
+
+function hideNotice() {
+  notice.hidden = true;
+  delete notice.dataset.kind;
 }
 
 async function goFullscreenLandscape() {
@@ -130,16 +157,41 @@ function releaseWakeLock() {
 
 async function play() {
   if (game.state === 'playing') return;
-  const granted = await requestOrientationPermission();
-  if (!granted) {
-    message.textContent = 'Motion access was denied. Allow it in your browser settings to tilt.';
-  }
+  permission = await requestOrientationPermission();
   goFullscreenLandscape();
   acquireWakeLock();
   baseline = latestReading; // calibrate: however the phone is held now is "flat"
   start(game);
   delete stage.dataset.loss;
   setState('playing');
+  watchSensor();
+}
+
+/** Tells the player why tilting does nothing, instead of leaving the ball silently still. */
+function watchSensor() {
+  clearTimeout(sensorTimer);
+  if (permission === 'denied') {
+    showNotice('denied');
+    return;
+  }
+  const countAtStart = readingCount;
+  sensorTimer = setTimeout(() => {
+    if (game.state === 'playing' && readingCount === countAtStart && keys.size === 0) {
+      showNotice('noData');
+    }
+  }, SENSOR_TIMEOUT_MS);
+}
+
+function updateDebug() {
+  const r = latestReading;
+  const angle = effectiveAngle(screenAngle(), portraitViewport);
+  const t = currentTilt();
+  debugPanel.textContent = [
+    `permission ${permission}  events ${readingCount}`,
+    `beta ${r ? r.beta.toFixed(1) : '-'}  gamma ${r ? r.gamma.toFixed(1) : '-'}`,
+    `screen ${screenAngle()}°  game ${angle}°  portrait ${portraitViewport}`,
+    `tilt x ${t.x.toFixed(2)}  y ${t.y.toFixed(2)}`,
+  ].join('\n');
 }
 
 function draw() {
@@ -155,12 +207,15 @@ function frame(now) {
     if (game.state === 'lost') showLoss(game.lossReason);
   }
   draw();
+  if (debugPanel) updateDebug();
   requestAnimationFrame(frame);
 }
 
 window.addEventListener('deviceorientation', (e) => {
   if (e.beta == null || e.gamma == null) return;
   latestReading = { beta: e.beta, gamma: e.gamma };
+  readingCount++;
+  if (notice.dataset.kind === 'noData') hideNotice();
   if (game?.state === 'playing' && !baseline) baseline = latestReading;
 });
 
@@ -190,6 +245,8 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('resize', resize);
 screen.orientation?.addEventListener?.('change', resize);
 playButton.addEventListener('click', play);
+notice.addEventListener('click', hideNotice);
+if (debugPanel) debugPanel.hidden = false;
 
 resize();
 setState('ready');
