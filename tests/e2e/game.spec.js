@@ -12,9 +12,8 @@ async function startGame(page) {
 async function tilt(page, x, y) {
   await page.evaluate(
     ([x, y]) => {
-      const portrait = window.innerHeight > window.innerWidth;
-      const angle = ((screen.orientation?.angle ?? 0) + (portrait ? 90 : 0)) % 360;
-      // Inverse of screenTilt() in src/input.js.
+      const angle = (((screen.orientation?.angle ?? 0) % 360) + 360) % 360;
+      // Inverse of screenGravity() in src/input.js (exact in direction, small angles).
       const map = {
         0: { beta: y, gamma: x },
         90: { beta: x, gamma: -y },
@@ -58,7 +57,7 @@ test('shows the title screen over a full-screen rug', async ({ page }) => {
     const c = document.getElementById('game');
     const ctx = c.getContext('2d');
     const px = (x, y) => [...ctx.getImageData(x, y, 1, 1).data];
-    const k = c.height / 1000;
+    const k = c.height / window.__cheetahOn.layout.height;
     return [
       px(Math.round(48 * k), Math.round(c.height / 2)),
       px(Math.round(120 * k), Math.round(120 * k)),
@@ -99,6 +98,9 @@ test('rolling into the cheetah loses (keyboard)', async ({ page }) => {
 });
 
 test('the curled tail is solid too', async ({ page }) => {
+  const { width, height } = page.viewportSize();
+  // From the portrait spawn point a straight roll left passes above the tail.
+  test.skip(height > width, 'tail sits on the spawn row only in landscape');
   await startGame(page);
   await page.keyboard.down('ArrowLeft');
   await expect(stage(page)).toHaveAttribute('data-state', 'lost');
@@ -152,20 +154,190 @@ test('calibrates to however the phone is held when play starts', async ({ page }
   await expect(stage(page)).toHaveAttribute('data-loss', 'border');
 });
 
-test('stays in landscape: a portrait viewport rotates the stage', async ({ page }) => {
-  const portrait = await page.evaluate(() => window.innerHeight > window.innerWidth);
-  await expect(stage(page)).toHaveClass(portrait ? /rotated/ : /^(?!.*rotated)/);
-  const size = await page.evaluate(() => {
-    const s = document.getElementById('stage');
-    return { w: s.offsetWidth, h: s.offsetHeight };
-  });
-  expect(size.w).toBeGreaterThanOrEqual(size.h);
+test('the playfield follows the screen orientation, with the cheetah centered', async ({
+  page,
+}) => {
+  const viewport = page.viewportSize();
+  const portrait = viewport.height > viewport.width;
+  const { layout } = await page.evaluate(() => ({ layout: window.__cheetahOn.layout }));
+  // Upright, never rotated: the world's long side matches the screen's long side.
+  expect(layout.height > layout.width).toBe(portrait);
+  expect(layout.width / layout.height).toBeCloseTo(viewport.width / viewport.height, 2);
+  await expect(stage(page)).toHaveCSS('transform', 'none');
+
+  // The title card fits entirely on screen.
+  const card = await page.locator('.card').boundingBox();
+  expect(card.y).toBeGreaterThanOrEqual(0);
+  expect(card.x).toBeGreaterThanOrEqual(0);
+  expect(card.y + card.height).toBeLessThanOrEqual(viewport.height);
+  expect(card.x + card.width).toBeLessThanOrEqual(viewport.width);
 });
 
-test('serves a landscape, full-screen web manifest', async ({ request }) => {
+test('turning the phone switches between portrait and landscape layouts', async ({ page }) => {
+  const { width, height } = page.viewportSize();
+  const before = await page.evaluate(() => window.__cheetahOn.layout);
+  await page.setViewportSize({ width: height, height: width });
+  await expect
+    .poll(() => page.evaluate(() => window.__cheetahOn.layout.width))
+    .not.toBeCloseTo(before.width, 0);
+  const after = await page.evaluate(() => window.__cheetahOn.layout);
+  expect(after.width > after.height).toBe(height > width);
+});
+
+test('serves a full-screen web manifest that allows both orientations', async ({ request }) => {
   const res = await request.get('/manifest.webmanifest');
   expect(res.ok()).toBe(true);
   const manifest = await res.json();
-  expect(manifest.orientation).toBe('landscape');
+  expect(manifest.orientation).toBe('any');
   expect(manifest.display).toBe('fullscreen');
+});
+
+test.describe('motion sensor detection', () => {
+  const status = (page) => page.locator('#sensor-status');
+  const notice = (page) => page.locator('#notice');
+  const IPHONE_UA =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+
+  /** Runs `setup` before the app's own scripts on a fresh load. */
+  async function reloadWith(page, setup, arg) {
+    await page.addInitScript(setup, arg);
+    await page.reload();
+  }
+
+  /**
+   * Headless Chromium has no sensors, so it sends one empty "no hardware" event. Swallow
+   * it to model a phone that has sensors but sends nothing (blocked, or iOS before Allow).
+   */
+  const silenceEmptyEvents = () => {
+    window.addEventListener(
+      'deviceorientation',
+      (e) => e.beta == null && e.stopImmediatePropagation(),
+      true,
+    );
+  };
+
+  /** Simulates iOS: motion events need DeviceOrientationEvent.requestPermission(). */
+  const fakeIos = ({ ua, answer }) => {
+    window.addEventListener(
+      'deviceorientation',
+      (e) => e.beta == null && e.stopImmediatePropagation(),
+      true,
+    );
+    Object.defineProperty(navigator, 'userAgent', { get: () => ua });
+    window.__permissionCalls = 0;
+    DeviceOrientationEvent.requestPermission = async () => {
+      window.__permissionCalls++;
+      return answer;
+    };
+  };
+
+  /** Simulates Brave with motion sensors blocked; window.__allowSensors() unblocks them. */
+  const fakeBraveBlocked = () => {
+    navigator.brave = { isBrave: async () => true };
+    const perms = ['accelerometer', 'gyroscope'].map(() => {
+      const st = new EventTarget();
+      st.state = 'denied';
+      return st;
+    });
+    let i = 0;
+    navigator.permissions.query = async () => perms[i++ % 2];
+    window.__allowSensors = () =>
+      perms.forEach((st) => {
+        st.state = 'granted';
+        st.dispatchEvent(new Event('change'));
+      });
+  };
+
+  test('on desktop, points to the keyboard and never nags during play', async ({ page }) => {
+    test.skip(!!test.info().project.use.hasTouch, 'desktop only');
+    await expect(status(page)).toHaveAttribute('data-status', 'unavailable');
+    await expect(status(page)).toContainText('arrow keys');
+    await startGame(page);
+    await page.waitForTimeout(2000);
+    await expect(notice(page)).toBeHidden();
+  });
+
+  test('warns on the title screen when a phone sends no tilt data', async ({ page }) => {
+    test.skip(!test.info().project.use.hasTouch, 'phones only');
+    await reloadWith(page, silenceEmptyEvents);
+    await expect(status(page)).toHaveAttribute('data-status', 'silent');
+    await expect(status(page)).toHaveAttribute('data-tone', 'warn');
+    await expect(status(page)).toContainText('Motion sensors');
+    // Playing anyway repeats the warning on the playfield...
+    await startGame(page);
+    await expect(notice(page)).toHaveAttribute('data-kind', 'silent', { timeout: 4000 });
+    // ...and it clears the moment readings arrive.
+    await tilt(page, 0, 0);
+    await expect(notice(page)).toBeHidden();
+  });
+
+  test('says the sensor is ready once readings arrive', async ({ page }) => {
+    await tilt(page, 0, 0);
+    await expect(status(page)).toHaveAttribute('data-status', 'ok');
+    await expect(status(page)).toHaveText('Tilt sensor ready.');
+    await startGame(page);
+    for (let i = 0; i < 8; i++) {
+      await tilt(page, 0, 0);
+      await page.waitForTimeout(250);
+    }
+    await expect(notice(page)).toBeHidden();
+  });
+
+  test('detects a device without sensor hardware (empty events)', async ({ page }) => {
+    await page.evaluate(() =>
+      window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', {})),
+    );
+    await expect(status(page)).toHaveAttribute('data-status', 'unavailable');
+  });
+
+  test('detects blocked sensors in Brave, with Brave-specific steps', async ({ page }) => {
+    await reloadWith(page, fakeBraveBlocked);
+    await expect(status(page)).toHaveAttribute('data-status', 'blocked');
+    await expect(status(page)).toContainText('Site and Shields settings');
+    await startGame(page);
+    await expect(notice(page)).toHaveAttribute('data-kind', 'blocked');
+    await expect(notice(page)).toContainText('In Brave');
+  });
+
+  test('clears the warning as soon as sensors are allowed in settings', async ({ page }) => {
+    await reloadWith(page, fakeBraveBlocked);
+    await expect(status(page)).toHaveAttribute('data-status', 'blocked');
+    await page.evaluate(() => window.__allowSensors());
+    await tilt(page, 0, 0);
+    await expect(status(page)).toHaveAttribute('data-status', 'ok');
+  });
+
+  test('iPhone: explains the prompt, then asks for access when Play is tapped', async ({
+    page,
+  }) => {
+    await reloadWith(page, fakeIos, { ua: IPHONE_UA, answer: 'granted' });
+    await expect(status(page)).toHaveAttribute('data-status', 'needs-permission');
+    expect(await page.evaluate(() => window.__permissionCalls)).toBe(0);
+    await startGame(page);
+    expect(await page.evaluate(() => window.__permissionCalls)).toBe(1);
+    await tilt(page, 0, 0);
+    await tilt(page, 0, 20);
+    await expect(stage(page)).toHaveAttribute('data-loss', 'cheetah');
+    await expect(notice(page)).toBeHidden();
+  });
+
+  test('iPhone: explains how to fix a denied permission', async ({ page }) => {
+    await reloadWith(page, fakeIos, { ua: IPHONE_UA, answer: 'denied' });
+    await startGame(page);
+    await expect(notice(page)).toHaveAttribute('data-kind', 'blocked');
+    await expect(notice(page)).toContainText('tap Allow');
+    await expect(status(page)).toHaveAttribute('data-status', 'blocked');
+  });
+
+  test('?debug shows live sensor readings', async ({ page }) => {
+    await page.goto('/?debug');
+    await expect(page.locator('#debug')).toBeVisible();
+    await tilt(page, 0, 12);
+    await expect(page.locator('#debug')).toContainText('events 1');
+    await expect(page.locator('#debug')).toContainText('sensor ok');
+  });
+
+  test('the debug panel is hidden normally', async ({ page }) => {
+    await expect(page.locator('#debug')).toBeHidden();
+  });
 });

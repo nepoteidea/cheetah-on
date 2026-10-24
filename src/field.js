@@ -1,9 +1,10 @@
-// Playfield layout in world units. The world is always 1000 units tall and as wide as the
-// screen's aspect ratio requires, so the rug fills the whole screen on any phone.
+// Playfield layout in world units. The screen's short side is always 1000 units and the
+// long side stretches to the screen's aspect ratio, so the rug fills the whole screen in
+// portrait and landscape alike.
 
 import { bounds, cheetahDistance } from './cheetah.js';
 
-export const WORLD_HEIGHT = 1000;
+export const WORLD_SHORT_SIDE = 1000;
 export const TRIM = 16; // light salmon outer trim
 export const FRAME = 64; // hot-pink frame
 export const BORDER = TRIM + FRAME;
@@ -15,22 +16,24 @@ const CHEETAH_MARGIN = 70; // minimum green gap around the cheetah
 const MAX_CHEETAH_SCALE = 1.1;
 
 export function createLayout(screenWidth, screenHeight) {
-  const aspect = Math.max(1, screenWidth / Math.max(1, screenHeight));
-  const width = WORLD_HEIGHT * aspect;
-  const height = WORLD_HEIGHT;
+  const w = Math.max(1, screenWidth);
+  const h = Math.max(1, screenHeight);
+  const width = WORLD_SHORT_SIDE * Math.max(1, w / h);
+  const height = WORLD_SHORT_SIDE * Math.max(1, h / w);
 
   const availW = width - 2 * (BORDER + CHEETAH_MARGIN);
   const availH = height - 2 * (BORDER + CHEETAH_MARGIN);
   const scale = Math.min(MAX_CHEETAH_SCALE, availW / bounds.width, availH / bounds.height);
 
-  // Centered horizontally; standing so its paws are just above the bottom border.
+  // Centered on the screen: shrinks to fit the width in portrait, fills the height in
+  // landscape.
   const offsetX = width / 2 - (scale * (bounds.minX + bounds.maxX)) / 2;
-  const offsetY = height - BORDER - CHEETAH_MARGIN - scale * bounds.maxY;
+  const offsetY = height / 2 - (scale * (bounds.minY + bounds.maxY)) / 2;
 
   const layout = {
     width,
     height,
-    pxPerUnit: screenHeight / WORLD_HEIGHT,
+    pxPerUnit: Math.min(w, h) / WORLD_SHORT_SIDE,
     inner: { left: BORDER, top: BORDER, right: width - BORDER, bottom: height - BORDER },
     cheetah: { scale, offsetX, offsetY },
     ballRadius: BALL_RADIUS,

@@ -24,6 +24,8 @@
         id="game"
         aria-label="Playfield: a green rug with a pink border and a cheetah"
       ></canvas>
+      <p id="notice" role="status" hidden></p>
+      <pre id="debug" hidden></pre>
       <div id="overlay">
         <div class="card">
           <h1 id="title">Cheetah On</h1>
@@ -31,7 +33,7 @@
             Tilt your phone to roll the ball. Don't touch the cheetah or the pink border.
           </p>
           <button id="play" type="button">Play</button>
-          <p class="hint">On a computer, use the arrow keys.</p>
+          <p id="sensor-status" class="hint" role="status"></p>
         </div>
       </div>
     </div>
