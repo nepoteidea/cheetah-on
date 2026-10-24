@@ -184,6 +184,42 @@ test('turning the phone switches between portrait and landscape layouts', async 
   expect(after.width > after.height).toBe(height > width);
 });
 
+test.describe('exit fullscreen button', () => {
+  const isFullscreen = (page) => page.evaluate(() => Boolean(document.fullscreenElement));
+
+  test('is hidden until the game goes full screen', async ({ page }) => {
+    await expect(page.locator('#exit-fullscreen')).toBeHidden();
+  });
+
+  test('appears in full screen and leaves it, pausing the round', async ({ page }) => {
+    await startGame(page);
+    await expect.poll(() => isFullscreen(page)).toBe(true);
+    const button = page.getByRole('button', { name: 'Exit full screen' });
+    await expect(button).toBeVisible();
+
+    // It sits in the top-right corner, on the pink frame rather than the rug.
+    const box = await button.boundingBox();
+    const viewport = page.viewportSize();
+    expect(box.x + box.width).toBeGreaterThan(viewport.width - 60);
+    expect(box.y).toBeLessThan(20);
+
+    await button.click();
+    await expect.poll(() => isFullscreen(page)).toBe(false);
+    await expect(button).toBeHidden();
+    await expect(stage(page)).toHaveAttribute('data-state', 'ready');
+    await expect(page.locator('#title')).toHaveText('Paused');
+    await startGame(page);
+  });
+
+  test('leaving full screen another way (Esc, back) pauses too', async ({ page }) => {
+    await startGame(page);
+    await expect.poll(() => isFullscreen(page)).toBe(true);
+    await page.evaluate(() => document.exitFullscreen());
+    await expect(stage(page)).toHaveAttribute('data-state', 'ready');
+    await expect(page.locator('#title')).toHaveText('Paused');
+  });
+});
+
 test('serves a full-screen web manifest that allows both orientations', async ({ request }) => {
   const res = await request.get('/manifest.webmanifest');
   expect(res.ok()).toBe(true);

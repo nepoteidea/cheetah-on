@@ -135,8 +135,38 @@ body {
   z-index: 2;
 }
 
+/* Sits on the pink frame, where the ball can't go, so it never hides the playfield. */
+#exit-fullscreen {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top));
+  right: calc(8px + env(safe-area-inset-right));
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.18);
+  border: none;
+  border-radius: 50%;
+  opacity: 0.55;
+  cursor: pointer;
+  z-index: 3;
+}
+
+#exit-fullscreen:active,
+#exit-fullscreen:focus-visible {
+  opacity: 1;
+}
+
+#exit-fullscreen:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
 #notice[hidden],
-#debug[hidden] {
+#debug[hidden],
+#exit-fullscreen[hidden] {
   display: none;
 }
 
