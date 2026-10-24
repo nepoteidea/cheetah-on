@@ -37,6 +37,7 @@ jobs:
         id: preview
         if: github.event_name == 'pull_request'
         run: |
+          set -o pipefail  # without this, `| tee` hides a failed upload
           npx wrangler versions upload --preview-alias "pr-${{ github.event.number }}" \
             --message "PR #${{ github.event.number }} @ ${GITHUB_SHA::7}" | tee wrangler.log
           url=$(grep -oE 'https://pr-[^ ]+\.workers\.dev' wrangler.log | head -1)
