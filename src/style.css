@@ -155,3 +155,17 @@ body {
   pointer-events: none;
   z-index: 2;
 }
+
+#sensor-status[data-tone='warn'] {
+  padding: 8px 10px;
+  font-size: 13px;
+  opacity: 1;
+  color: #5a1430;
+  background: #fbd3e3;
+  border-radius: 10px;
+}
+
+#sensor-status[data-tone='ok'] {
+  color: #0d4f33;
+  opacity: 0.9;
+}

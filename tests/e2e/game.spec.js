@@ -192,56 +192,141 @@ test('serves a full-screen web manifest that allows both orientations', async ({
   expect(manifest.display).toBe('fullscreen');
 });
 
-test.describe('motion sensor access', () => {
-  /** Simulates iOS: motion events need DeviceOrientationEvent.requestPermission(). */
-  async function fakeIosPermission(page, answer) {
-    await page.addInitScript((answer) => {
-      window.__permissionCalls = 0;
-      DeviceOrientationEvent.requestPermission = async () => {
-        window.__permissionCalls++;
-        return answer;
-      };
-    }, answer);
+test.describe('motion sensor detection', () => {
+  const status = (page) => page.locator('#sensor-status');
+  const notice = (page) => page.locator('#notice');
+  const IPHONE_UA =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+
+  /** Runs `setup` before the app's own scripts on a fresh load. */
+  async function reloadWith(page, setup, arg) {
+    await page.addInitScript(setup, arg);
     await page.reload();
   }
 
-  test('asks for motion permission when Play is tapped (iOS)', async ({ page }) => {
-    await fakeIosPermission(page, 'granted');
-    expect(await page.evaluate(() => window.__permissionCalls)).toBe(0);
-    await tilt(page, 0, 0);
-    await startGame(page);
-    expect(await page.evaluate(() => window.__permissionCalls)).toBe(1);
-    await tilt(page, 0, 20);
-    await expect(stage(page)).toHaveAttribute('data-loss', 'cheetah');
-    await expect(page.locator('#notice')).toBeHidden();
-  });
+  /**
+   * Headless Chromium has no sensors, so it sends one empty "no hardware" event. Swallow
+   * it to model a phone that has sensors but sends nothing (blocked, or iOS before Allow).
+   */
+  const silenceEmptyEvents = () => {
+    window.addEventListener(
+      'deviceorientation',
+      (e) => e.beta == null && e.stopImmediatePropagation(),
+      true,
+    );
+  };
 
-  test('explains how to fix it when motion permission is denied', async ({ page }) => {
-    await fakeIosPermission(page, 'denied');
-    await startGame(page);
-    await expect(page.locator('#notice')).toBeVisible();
-    await expect(page.locator('#notice')).toHaveAttribute('data-kind', 'denied');
-    await expect(page.locator('#notice')).toContainText('tap Allow');
-  });
+  /** Simulates iOS: motion events need DeviceOrientationEvent.requestPermission(). */
+  const fakeIos = ({ ua, answer }) => {
+    window.addEventListener(
+      'deviceorientation',
+      (e) => e.beta == null && e.stopImmediatePropagation(),
+      true,
+    );
+    Object.defineProperty(navigator, 'userAgent', { get: () => ua });
+    window.__permissionCalls = 0;
+    DeviceOrientationEvent.requestPermission = async () => {
+      window.__permissionCalls++;
+      return answer;
+    };
+  };
 
-  test('says so when the phone sends no tilt data', async ({ page }) => {
-    await startGame(page);
-    await expect(page.locator('#notice')).toHaveAttribute('data-kind', 'noData', {
-      timeout: 4000,
+  /** Simulates Brave with motion sensors blocked; window.__allowSensors() unblocks them. */
+  const fakeBraveBlocked = () => {
+    navigator.brave = { isBrave: async () => true };
+    const perms = ['accelerometer', 'gyroscope'].map(() => {
+      const st = new EventTarget();
+      st.state = 'denied';
+      return st;
     });
-    await expect(page.locator('#notice')).toContainText('Motion sensors');
-    // As soon as readings arrive the notice goes away.
-    await tilt(page, 0, 0);
-    await expect(page.locator('#notice')).toBeHidden();
+    let i = 0;
+    navigator.permissions.query = async () => perms[i++ % 2];
+    window.__allowSensors = () =>
+      perms.forEach((st) => {
+        st.state = 'granted';
+        st.dispatchEvent(new Event('change'));
+      });
+  };
+
+  test('on desktop, points to the keyboard and never nags during play', async ({ page }) => {
+    test.skip(!!test.info().project.use.hasTouch, 'desktop only');
+    await expect(status(page)).toHaveAttribute('data-status', 'unavailable');
+    await expect(status(page)).toContainText('arrow keys');
+    await startGame(page);
+    await page.waitForTimeout(2000);
+    await expect(notice(page)).toBeHidden();
   });
 
-  test('stays quiet when tilt data is flowing', async ({ page }) => {
+  test('warns on the title screen when a phone sends no tilt data', async ({ page }) => {
+    test.skip(!test.info().project.use.hasTouch, 'phones only');
+    await reloadWith(page, silenceEmptyEvents);
+    await expect(status(page)).toHaveAttribute('data-status', 'silent');
+    await expect(status(page)).toHaveAttribute('data-tone', 'warn');
+    await expect(status(page)).toContainText('Motion sensors');
+    // Playing anyway repeats the warning on the playfield...
+    await startGame(page);
+    await expect(notice(page)).toHaveAttribute('data-kind', 'silent', { timeout: 4000 });
+    // ...and it clears the moment readings arrive.
+    await tilt(page, 0, 0);
+    await expect(notice(page)).toBeHidden();
+  });
+
+  test('says the sensor is ready once readings arrive', async ({ page }) => {
+    await tilt(page, 0, 0);
+    await expect(status(page)).toHaveAttribute('data-status', 'ok');
+    await expect(status(page)).toHaveText('Tilt sensor ready.');
     await startGame(page);
     for (let i = 0; i < 8; i++) {
       await tilt(page, 0, 0);
       await page.waitForTimeout(250);
     }
-    await expect(page.locator('#notice')).toBeHidden();
+    await expect(notice(page)).toBeHidden();
+  });
+
+  test('detects a device without sensor hardware (empty events)', async ({ page }) => {
+    await page.evaluate(() =>
+      window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', {})),
+    );
+    await expect(status(page)).toHaveAttribute('data-status', 'unavailable');
+  });
+
+  test('detects blocked sensors in Brave, with Brave-specific steps', async ({ page }) => {
+    await reloadWith(page, fakeBraveBlocked);
+    await expect(status(page)).toHaveAttribute('data-status', 'blocked');
+    await expect(status(page)).toContainText('Site and Shields settings');
+    await startGame(page);
+    await expect(notice(page)).toHaveAttribute('data-kind', 'blocked');
+    await expect(notice(page)).toContainText('In Brave');
+  });
+
+  test('clears the warning as soon as sensors are allowed in settings', async ({ page }) => {
+    await reloadWith(page, fakeBraveBlocked);
+    await expect(status(page)).toHaveAttribute('data-status', 'blocked');
+    await page.evaluate(() => window.__allowSensors());
+    await tilt(page, 0, 0);
+    await expect(status(page)).toHaveAttribute('data-status', 'ok');
+  });
+
+  test('iPhone: explains the prompt, then asks for access when Play is tapped', async ({
+    page,
+  }) => {
+    await reloadWith(page, fakeIos, { ua: IPHONE_UA, answer: 'granted' });
+    await expect(status(page)).toHaveAttribute('data-status', 'needs-permission');
+    expect(await page.evaluate(() => window.__permissionCalls)).toBe(0);
+    await startGame(page);
+    expect(await page.evaluate(() => window.__permissionCalls)).toBe(1);
+    await tilt(page, 0, 0);
+    await tilt(page, 0, 20);
+    await expect(stage(page)).toHaveAttribute('data-loss', 'cheetah');
+    await expect(notice(page)).toBeHidden();
+  });
+
+  test('iPhone: explains how to fix a denied permission', async ({ page }) => {
+    await reloadWith(page, fakeIos, { ua: IPHONE_UA, answer: 'denied' });
+    await startGame(page);
+    await expect(notice(page)).toHaveAttribute('data-kind', 'blocked');
+    await expect(notice(page)).toContainText('tap Allow');
+    await expect(status(page)).toHaveAttribute('data-status', 'blocked');
   });
 
   test('?debug shows live sensor readings', async ({ page }) => {
@@ -249,7 +334,7 @@ test.describe('motion sensor access', () => {
     await expect(page.locator('#debug')).toBeVisible();
     await tilt(page, 0, 12);
     await expect(page.locator('#debug')).toContainText('events 1');
-    await expect(page.locator('#debug')).toContainText(/beta -?\d/);
+    await expect(page.locator('#debug')).toContainText('sensor ok');
   });
 
   test('the debug panel is hidden normally', async ({ page }) => {
