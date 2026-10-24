@@ -1,7 +1,7 @@
 import './style.css';
 import { createLayout } from './field.js';
 import { createGame, start, update } from './game.js';
-import { effectiveAngle, isTiltKey, tiltFromKeys, tiltFromOrientation } from './input.js';
+import { isTiltKey, tiltFromKeys, tiltFromOrientation } from './input.js';
 import { drawFrame, renderBackground } from './render.js';
 
 const stage = document.getElementById('stage');
@@ -21,7 +21,7 @@ const NOTICES = {
   denied:
     "Motion access is off, so tilting won't move the ball. On iPhone, close this tab, open the site again and tap Allow.",
   noData:
-    "Your phone isn't sending tilt data. iPhone: tap Allow when asked for motion access. Android: browser menu → Site settings → Motion sensors → Allow.",
+    "Your phone isn't sending tilt data. Brave blocks it by default: menu → Settings → Site and Shields settings → Motion sensors → Allow. Chrome/Android: Site settings → Motion sensors. iPhone: tap Allow when asked.",
 };
 
 const LOSS_MESSAGES = {
@@ -33,7 +33,6 @@ let layout;
 let background;
 let game;
 let viewKey = '';
-let portraitViewport = false;
 let latestReading = null;
 let baseline = null;
 let wakeLock = null;
@@ -54,11 +53,9 @@ function resize() {
   if (key === viewKey) return;
   viewKey = key;
 
-  // Always play in landscape: in a portrait viewport the whole stage is rotated 90°.
-  portraitViewport = vh > vw;
-  const w = Math.max(vw, vh);
-  const h = Math.min(vw, vh);
-  stage.classList.toggle('rotated', portraitViewport);
+  // The playfield follows the screen: a tall rug in portrait, a wide one in landscape.
+  const w = vw;
+  const h = vh;
   stage.style.width = `${w}px`;
   stage.style.height = `${h}px`;
 
@@ -81,11 +78,7 @@ function resize() {
 function currentTilt() {
   if (keys.size > 0) return tiltFromKeys(keys);
   if (latestReading && baseline) {
-    return tiltFromOrientation(
-      latestReading,
-      baseline,
-      effectiveAngle(screenAngle(), portraitViewport),
-    );
+    return tiltFromOrientation(latestReading, baseline, screenAngle());
   }
   return { x: 0, y: 0 };
 }
@@ -136,9 +129,11 @@ async function goFullscreenLandscape() {
     if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
       await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
     }
-    await screen.orientation?.lock?.('landscape');
+    // Keep whichever orientation play started in, so the screen can't flip mid-round.
+    const type = screen.orientation?.type ?? '';
+    await screen.orientation?.lock?.(type.startsWith('portrait') ? 'portrait' : 'landscape');
   } catch {
-    // Not supported (e.g. iOS Safari, desktop): the rotated-stage fallback keeps landscape.
+    // Not supported (e.g. iOS Safari, desktop). A rotation mid-round restarts the round.
   }
 }
 
@@ -184,12 +179,11 @@ function watchSensor() {
 
 function updateDebug() {
   const r = latestReading;
-  const angle = effectiveAngle(screenAngle(), portraitViewport);
   const t = currentTilt();
   debugPanel.textContent = [
     `permission ${permission}  events ${readingCount}`,
     `beta ${r ? r.beta.toFixed(1) : '-'}  gamma ${r ? r.gamma.toFixed(1) : '-'}`,
-    `screen ${screenAngle()}°  game ${angle}°  portrait ${portraitViewport}`,
+    `screen ${screenAngle()}°  ${window.innerWidth}×${window.innerHeight}`,
     `tilt x ${t.x.toFixed(2)}  y ${t.y.toFixed(2)}`,
   ].join('\n');
 }

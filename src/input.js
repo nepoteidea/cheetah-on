@@ -32,14 +32,6 @@ export function screenGravity(beta, gamma, angle) {
   }
 }
 
-/**
- * The rotation the game is actually displayed at. In a portrait viewport the stage is
- * rotated 90° clockwise so the game always plays in landscape.
- */
-export function effectiveAngle(screenAngle, portraitViewport) {
-  return portraitViewport ? (screenAngle + 90) % 360 : screenAngle;
-}
-
 const clampUnit = (v) => Math.max(-1, Math.min(1, v));
 
 /** Tilt relative to the calibrated resting position, normalised to [-1, 1]. */

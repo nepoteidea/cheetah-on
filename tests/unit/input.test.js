@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  effectiveAngle,
-  isTiltKey,
-  screenGravity,
-  tiltFromKeys,
-  tiltFromOrientation,
-} from '../../src/input.js';
+import { isTiltKey, screenGravity, tiltFromKeys, tiltFromOrientation } from '../../src/input.js';
 
 describe('screenGravity', () => {
   const close = (v, x, y) => {
@@ -39,14 +33,6 @@ describe('screenGravity', () => {
     const rest = screenGravity(0, -70, 90);
     const tipped = screenGravity(10, -70, 90);
     expect(tipped.x - rest.x).toBeGreaterThan(0.15);
-  });
-});
-
-describe('effectiveAngle', () => {
-  it('adds 90° when the stage is rotated in a portrait viewport', () => {
-    expect(effectiveAngle(0, true)).toBe(90);
-    expect(effectiveAngle(270, true)).toBe(0);
-    expect(effectiveAngle(90, false)).toBe(90);
   });
 });
 

@@ -11,9 +11,12 @@ Live at **https://cheetah-on.nepoteidea.com** (deployed from `main`).
 - **Phones:** tap **Play**. On iOS, allow motion access when asked. However you're holding the
   phone when you tap counts as level, so you can play sitting or lying down.
 - **Computers:** use the arrow keys or WASD.
-- The game always runs in landscape. It asks the browser for fullscreen and a landscape lock.
-  Where that's not supported (iOS Safari), the stage rotates itself, so a portrait screen still
-  shows it in landscape.
+- The rug fills the screen in portrait or landscape. In portrait the cheetah shrinks to fit the
+  width and sits vertically centered. During play the screen locks to the orientation you
+  started in, where the browser supports it (not iOS Safari).
+- If tilting does nothing, an on-screen notice says why and how to fix it. Brave blocks motion
+  sensors by default: allow them under Site settings → Motion sensors. Add `?debug` to the
+  URL to see live sensor readings.
 - Collisions follow the cheetah's real outline (tail, ears, paws, the gaps between the legs and
   the space under the belly), not a bounding box.
 

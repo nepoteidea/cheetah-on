@@ -4,7 +4,7 @@
   "description": "Tilt your phone to roll a tiny chrome ball around a cheetah rug.",
   "start_url": "/",
   "display": "fullscreen",
-  "orientation": "landscape",
+  "orientation": "any",
   "background_color": "#0d4f33",
   "theme_color": "#0d4f33",
   "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]

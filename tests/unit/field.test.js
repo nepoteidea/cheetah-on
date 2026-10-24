@@ -3,7 +3,7 @@ import { bounds } from '../../src/cheetah.js';
 import {
   BALL_RADIUS,
   BORDER,
-  WORLD_HEIGHT,
+  WORLD_SHORT_SIDE,
   createLayout,
   distanceToBorder,
   distanceToCheetah,
@@ -13,6 +13,7 @@ import {
 
 const phone = createLayout(915, 412); // Pixel 7 landscape
 const square = createLayout(800, 800);
+const portrait = createLayout(412, 839); // Pixel 7 portrait
 
 function cheetahWorldBox(layout) {
   const { scale, offsetX, offsetY } = layout.cheetah;
@@ -25,15 +26,20 @@ function cheetahWorldBox(layout) {
 }
 
 describe('createLayout', () => {
-  it('is always 1000 units tall and as wide as the screen aspect', () => {
-    expect(phone.height).toBe(WORLD_HEIGHT);
-    expect(phone.width).toBeCloseTo((WORLD_HEIGHT * 915) / 412);
+  it('in landscape is 1000 units tall and as wide as the screen aspect', () => {
+    expect(phone.height).toBe(WORLD_SHORT_SIDE);
+    expect(phone.width).toBeCloseTo((WORLD_SHORT_SIDE * 915) / 412);
     expect(phone.pxPerUnit).toBeCloseTo(0.412);
   });
 
-  it('never goes narrower than square', () => {
-    expect(createLayout(300, 600).width).toBe(WORLD_HEIGHT);
-    expect(createLayout(0, 0).width).toBe(WORLD_HEIGHT);
+  it('in portrait is 1000 units wide and as tall as the screen aspect', () => {
+    expect(portrait.width).toBe(WORLD_SHORT_SIDE);
+    expect(portrait.height).toBeCloseTo((WORLD_SHORT_SIDE * 839) / 412);
+    expect(portrait.pxPerUnit).toBeCloseTo(0.412);
+  });
+
+  it('handles a zero-sized screen', () => {
+    expect(createLayout(0, 0)).toMatchObject({ width: WORLD_SHORT_SIDE, height: WORLD_SHORT_SIDE });
   });
 
   it('places the inner field inside the border', () => {
@@ -41,16 +47,18 @@ describe('createLayout', () => {
       left: BORDER,
       top: BORDER,
       right: phone.width - BORDER,
-      bottom: WORLD_HEIGHT - BORDER,
+      bottom: WORLD_SHORT_SIDE - BORDER,
     });
   });
 
   it.each([
     ['phone', phone],
     ['square', square],
+    ['portrait', portrait],
   ])('centers the cheetah and keeps it clear of the border (%s)', (_name, layout) => {
     const box = cheetahWorldBox(layout);
     expect((box.left + box.right) / 2).toBeCloseTo(layout.width / 2);
+    expect((box.top + box.bottom) / 2).toBeCloseTo(layout.height / 2);
     expect(box.left).toBeGreaterThan(layout.inner.left + 3 * BALL_RADIUS);
     expect(box.right).toBeLessThan(layout.inner.right - 3 * BALL_RADIUS);
     expect(box.top).toBeGreaterThan(layout.inner.top + 3 * BALL_RADIUS);
@@ -59,11 +67,12 @@ describe('createLayout', () => {
 
   it('makes the cheetah large: most of the field height', () => {
     const box = cheetahWorldBox(phone);
-    expect(box.bottom - box.top).toBeGreaterThan(0.6 * WORLD_HEIGHT);
+    expect(box.bottom - box.top).toBeGreaterThan(0.6 * WORLD_SHORT_SIDE);
   });
 
   it('shrinks the cheetah on narrow screens so it still fits', () => {
     expect(square.cheetah.scale).toBeLessThan(phone.cheetah.scale);
+    expect(portrait.cheetah.scale).toBeCloseTo(square.cheetah.scale);
   });
 });
 
@@ -77,14 +86,14 @@ describe('toLocal', () => {
 });
 
 describe('hitTest', () => {
-  const mid = { x: phone.width / 2, y: WORLD_HEIGHT / 2 };
+  const mid = { x: phone.width / 2, y: WORLD_SHORT_SIDE / 2 };
 
   it('detects the ball touching each side of the border', () => {
     const r = BALL_RADIUS;
     expect(hitTest(phone, BORDER + r, 300)).toBe('border');
     expect(hitTest(phone, phone.width - BORDER - r, 300)).toBe('border');
     expect(hitTest(phone, 200, BORDER + r)).toBe('border');
-    expect(hitTest(phone, 200, WORLD_HEIGHT - BORDER - r)).toBe('border');
+    expect(hitTest(phone, 200, WORLD_SHORT_SIDE - BORDER - r)).toBe('border');
     expect(hitTest(phone, BORDER + r + 1, 300)).toBe(null);
   });
 
@@ -111,6 +120,7 @@ describe('spawn', () => {
   it.each([
     ['phone', phone],
     ['square', square],
+    ['portrait', portrait],
   ])('is safely above the cheetah, on the center line (%s)', (_name, layout) => {
     const { x, y } = layout.spawn;
     expect(x).toBeCloseTo(layout.width / 2);

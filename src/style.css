@@ -24,12 +24,6 @@ body {
   position: fixed;
   top: 0;
   left: 0;
-  transform-origin: top left;
-}
-
-/* Portrait viewport: rotate the landscape stage 90° clockwise to fill the screen. */
-#stage.rotated {
-  transform: rotate(90deg) translateY(-100%);
 }
 
 #game {

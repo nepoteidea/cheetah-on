@@ -12,8 +12,7 @@ async function startGame(page) {
 async function tilt(page, x, y) {
   await page.evaluate(
     ([x, y]) => {
-      const portrait = window.innerHeight > window.innerWidth;
-      const angle = ((screen.orientation?.angle ?? 0) + (portrait ? 90 : 0)) % 360;
+      const angle = (((screen.orientation?.angle ?? 0) % 360) + 360) % 360;
       // Inverse of screenGravity() in src/input.js (exact in direction, small angles).
       const map = {
         0: { beta: y, gamma: x },
@@ -58,7 +57,7 @@ test('shows the title screen over a full-screen rug', async ({ page }) => {
     const c = document.getElementById('game');
     const ctx = c.getContext('2d');
     const px = (x, y) => [...ctx.getImageData(x, y, 1, 1).data];
-    const k = c.height / 1000;
+    const k = c.height / window.__cheetahOn.layout.height;
     return [
       px(Math.round(48 * k), Math.round(c.height / 2)),
       px(Math.round(120 * k), Math.round(120 * k)),
@@ -99,6 +98,9 @@ test('rolling into the cheetah loses (keyboard)', async ({ page }) => {
 });
 
 test('the curled tail is solid too', async ({ page }) => {
+  const { width, height } = page.viewportSize();
+  // From the portrait spawn point a straight roll left passes above the tail.
+  test.skip(height > width, 'tail sits on the spawn row only in landscape');
   await startGame(page);
   await page.keyboard.down('ArrowLeft');
   await expect(stage(page)).toHaveAttribute('data-state', 'lost');
@@ -152,21 +154,41 @@ test('calibrates to however the phone is held when play starts', async ({ page }
   await expect(stage(page)).toHaveAttribute('data-loss', 'border');
 });
 
-test('stays in landscape: a portrait viewport rotates the stage', async ({ page }) => {
-  const portrait = await page.evaluate(() => window.innerHeight > window.innerWidth);
-  await expect(stage(page)).toHaveClass(portrait ? /rotated/ : /^(?!.*rotated)/);
-  const size = await page.evaluate(() => {
-    const s = document.getElementById('stage');
-    return { w: s.offsetWidth, h: s.offsetHeight };
-  });
-  expect(size.w).toBeGreaterThanOrEqual(size.h);
+test('the playfield follows the screen orientation, with the cheetah centered', async ({
+  page,
+}) => {
+  const viewport = page.viewportSize();
+  const portrait = viewport.height > viewport.width;
+  const { layout } = await page.evaluate(() => ({ layout: window.__cheetahOn.layout }));
+  // Upright, never rotated: the world's long side matches the screen's long side.
+  expect(layout.height > layout.width).toBe(portrait);
+  expect(layout.width / layout.height).toBeCloseTo(viewport.width / viewport.height, 2);
+  await expect(stage(page)).toHaveCSS('transform', 'none');
+
+  // The title card fits entirely on screen.
+  const card = await page.locator('.card').boundingBox();
+  expect(card.y).toBeGreaterThanOrEqual(0);
+  expect(card.x).toBeGreaterThanOrEqual(0);
+  expect(card.y + card.height).toBeLessThanOrEqual(viewport.height);
+  expect(card.x + card.width).toBeLessThanOrEqual(viewport.width);
 });
 
-test('serves a landscape, full-screen web manifest', async ({ request }) => {
+test('turning the phone switches between portrait and landscape layouts', async ({ page }) => {
+  const { width, height } = page.viewportSize();
+  const before = await page.evaluate(() => window.__cheetahOn.layout);
+  await page.setViewportSize({ width: height, height: width });
+  await expect
+    .poll(() => page.evaluate(() => window.__cheetahOn.layout.width))
+    .not.toBeCloseTo(before.width, 0);
+  const after = await page.evaluate(() => window.__cheetahOn.layout);
+  expect(after.width > after.height).toBe(height > width);
+});
+
+test('serves a full-screen web manifest that allows both orientations', async ({ request }) => {
   const res = await request.get('/manifest.webmanifest');
   expect(res.ok()).toBe(true);
   const manifest = await res.json();
-  expect(manifest.orientation).toBe('landscape');
+  expect(manifest.orientation).toBe('any');
   expect(manifest.display).toBe('fullscreen');
 });
 
