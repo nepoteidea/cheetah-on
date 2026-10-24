@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0d4f33" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta
+      name="description"
+      content="Tilt your phone to roll a tiny chrome ball around a cheetah rug. Don't touch the cheetah or the pink border."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>Cheetah On</title>
+  </head>
+  <body>
+    <div id="stage" data-state="ready">
+      <canvas
+        id="game"
+        aria-label="Playfield: a green rug with a pink border and a cheetah"
+      ></canvas>
+      <div id="overlay">
+        <div class="card">
+          <h1 id="title">Cheetah On</h1>
+          <p id="message">
+            Tilt your phone to roll the ball. Don't touch the cheetah or the pink border.
+          </p>
+          <button id="play" type="button">Play</button>
+          <p class="hint">On a computer, use the arrow keys.</p>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
