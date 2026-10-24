@@ -13,6 +13,7 @@ const title = document.getElementById('title');
 const message = document.getElementById('message');
 const playButton = document.getElementById('play');
 const notice = document.getElementById('notice');
+const exitFullscreenButton = document.getElementById('exit-fullscreen');
 const sensorStatus = document.getElementById('sensor-status');
 const debugPanel = new URLSearchParams(location.search).has('debug')
   ? document.getElementById('debug')
@@ -188,6 +189,26 @@ async function goFullscreenLandscape() {
   }
 }
 
+/** Stops the round and shows the title card; tapping Play starts a fresh one. */
+function pause() {
+  game = createGame(layout);
+  title.textContent = 'Paused';
+  message.textContent = 'Tap to start again.';
+  playButton.textContent = 'Play';
+  setState('ready');
+  releaseWakeLock();
+}
+
+async function exitFullscreen() {
+  if (game.state === 'playing') pause();
+  try {
+    screen.orientation?.unlock?.();
+    await document.exitFullscreen();
+  } catch {
+    // Already out of fullscreen.
+  }
+}
+
 async function acquireWakeLock() {
   try {
     wakeLock = await navigator.wakeLock?.request('screen');
@@ -276,20 +297,21 @@ window.addEventListener('blur', () => keys.clear());
 document.addEventListener('visibilitychange', () => {
   // Coming back from the browser's settings: check again.
   if (!document.hidden && sensor.reading !== 'values') startSensorTimer();
-  if (document.hidden && game.state === 'playing') {
-    game = createGame(layout);
-    title.textContent = 'Paused';
-    message.textContent = 'Tap to start again.';
-    playButton.textContent = 'Play';
-    setState('ready');
-    releaseWakeLock();
-  }
+  if (document.hidden && game.state === 'playing') pause();
+});
+
+document.addEventListener('fullscreenchange', () => {
+  const fullscreen = Boolean(document.fullscreenElement);
+  exitFullscreenButton.hidden = !fullscreen;
+  // Leaving fullscreen any other way (back gesture, Esc) pauses too, instead of restarting.
+  if (!fullscreen && game.state === 'playing') pause();
 });
 
 window.addEventListener('resize', resize);
 screen.orientation?.addEventListener?.('change', resize);
 playButton.addEventListener('click', play);
 notice.addEventListener('click', hideNotice);
+exitFullscreenButton.addEventListener('click', exitFullscreen);
 if (debugPanel) debugPanel.hidden = false;
 
 resize();
