@@ -1,0 +1,11 @@
+{
+  "name": "Cheetah On",
+  "short_name": "Cheetah On",
+  "description": "Tilt your phone to roll a tiny chrome ball around a cheetah rug.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d4f33",
+  "theme_color": "#0d4f33",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

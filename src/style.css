@@ -1,0 +1,123 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0d4f33;
+  overscroll-behavior: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  font-family:
+    ui-rounded,
+    'SF Pro Rounded',
+    'Nunito',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+#stage {
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}
+
+/* Portrait viewport: rotate the landscape stage 90° clockwise to fill the screen. */
+#stage.rotated {
+  transform: rotate(90deg) translateY(-100%);
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 30, 18, 0.45);
+}
+
+#overlay[hidden] {
+  display: none;
+}
+
+.card {
+  max-width: min(420px, 80%);
+  padding: 20px 28px 18px;
+  text-align: center;
+  color: #3b2312;
+  background: #f3dfb2;
+  border: 6px solid #e02a7f;
+  border-radius: 22px;
+  box-shadow:
+    0 0 0 4px #f6a99c,
+    0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.card h1 {
+  margin: 0 0 6px;
+  font-size: 30px;
+  letter-spacing: 0.5px;
+}
+
+.card p {
+  margin: 0 0 14px;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.card .hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+#play {
+  font: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  padding: 10px 34px;
+  color: #fff;
+  background: #e02a7f;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #a5155a;
+}
+
+#play:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #a5155a;
+}
+
+#play:disabled {
+  opacity: 0.6;
+}
+
+#play:focus-visible {
+  outline: 3px solid #0d4f33;
+  outline-offset: 3px;
+}
+
+@media (max-height: 380px) {
+  .card {
+    padding: 12px 20px 10px;
+  }
+  .card h1 {
+    font-size: 24px;
+  }
+  .card p {
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+}
